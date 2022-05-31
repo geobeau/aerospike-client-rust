@@ -26,23 +26,28 @@ use crate::net::parser::Parser;
 pub struct Host {
     /// Host name or IP address of database server.
     pub name: String,
-
+    /// Name defines the TLS certificate name used for secure connections.
+    pub tls_name: Option<String>,
     /// Port of database server.
     pub port: u16,
 }
 
 impl Host {
     /// Create a new host instance given a hostname/IP and a port number.
-    pub fn new(name: &str, port: u16) -> Self {
+    pub fn new(name: &str, tls_name: Option<String>, port: u16) -> Self {
         Host {
             name: name.to_string(),
+            tls_name,
             port,
         }
     }
 
     /// Returns a string representation of the host's address.
     pub fn address(&self) -> String {
-        format!("{}:{}", self.name, self.port)
+        match &self.tls_name {
+            Some(tls_name) => format!("{}:{}:{}", self.name, tls_name, self.port),
+            None => format!("{}:{}", self.name, self.port),
+        }
     }
 }
 
@@ -67,24 +72,24 @@ pub trait ToHosts {
     ///
     /// Any errors encountered during conversion will be returned as an `Err`.
     fn to_hosts(&self) -> Result<Vec<Host>>;
-    fn to_hosts_with_default_port(&self, default_port: u16) -> Result<Vec<Host>>;
+    fn to_hosts_with_defaults(&self, default_port: u16, default_tls_name: Option<String>) -> Result<Vec<Host>>;
 }
 
 impl ToHosts for Vec<Host> {
     fn to_hosts(&self) -> Result<Vec<Host>> {
         Ok(self.clone())
     }
-    fn to_hosts_with_default_port(&self, default_port: u16) -> Result<Vec<Host>> {
+    fn to_hosts_with_defaults(&self, _default_port: u16, _default_tls_name: Option<String>) -> Result<Vec<Host>> {
         Ok(self.clone())
     }
 }
 
 impl ToHosts for String {
     fn to_hosts(&self) -> Result<Vec<Host>> {
-        self.to_hosts_with_default_port(3000)
+        self.to_hosts_with_defaults(3000, None)
     }
-    fn to_hosts_with_default_port(&self, default_port: u16) -> Result<Vec<Host>> {
-        let mut parser = Parser::new(self, default_port);
+    fn to_hosts_with_defaults(&self, default_port: u16, default_tls_name: Option<String>) -> Result<Vec<Host>> {
+        let mut parser = Parser::new(self, default_port, default_tls_name);
         parser
             .read_hosts()
             .chain_err(|| ErrorKind::InvalidArgument(format!("Invalid hosts list: '{}'", self)))
@@ -95,8 +100,8 @@ impl<'a> ToHosts for &'a str {
     fn to_hosts(&self) -> Result<Vec<Host>> {
         (*self).to_string().to_hosts()
     }
-    fn to_hosts_with_default_port(&self, default_port: u16) -> Result<Vec<Host>> {
-        (*self).to_string().to_hosts_with_default_port(default_port)
+    fn to_hosts_with_defaults(&self, default_port: u16, default_tls_name: Option<String>) -> Result<Vec<Host>> {
+        (*self).to_string().to_hosts_with_defaults(default_port, default_tls_name)
     }
 }
 
@@ -107,13 +112,13 @@ mod tests {
     #[test]
     fn to_hosts() {
         assert_eq!(
-            vec![Host::new("foo", 3000)],
+            vec![Host::new("foo", None, 3000)],
             String::from("foo").to_hosts().unwrap()
         );
-        assert_eq!(vec![Host::new("foo", 3000)], "foo".to_hosts().unwrap());
-        assert_eq!(vec![Host::new("foo", 1234)], "foo:1234".to_hosts().unwrap());
+        assert_eq!(vec![Host::new("foo", None, 3000)], "foo".to_hosts().unwrap());
+        assert_eq!(vec![Host::new("foo", None, 1234)], "foo:1234".to_hosts().unwrap());
         assert_eq!(
-            vec![Host::new("foo", 1234), Host::new("bar", 1234)],
+            vec![Host::new("foo", None, 1234), Host::new("bar", None, 1234)],
             "foo:1234,bar:1234".to_hosts().unwrap()
         );
     }

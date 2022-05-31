@@ -80,7 +80,7 @@ impl NodeValidator {
     fn resolve_aliases(&mut self, host: &Host) -> Result<()> {
         self.aliases = (host.name.as_ref(), host.port)
             .to_socket_addrs()?
-            .map(|addr| Host::new(&addr.ip().to_string(), addr.port()))
+            .map(|addr| Host::new(&addr.ip().to_string(), None, addr.port()))
             .collect();
         debug!("Resolved aliases for host {}: {:?}", host, self.aliases);
         if self.aliases.is_empty() {

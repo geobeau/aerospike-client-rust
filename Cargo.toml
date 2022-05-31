@@ -36,6 +36,8 @@ parking_lot = "0.9"
 pwhash = "0.3"
 serde = { version = "1.0", features = ["derive"], optional = true }
 logos = "0.12.0"
+rustls = "0.20.4"
+webpki-roots = "0.22.3"
 
 [features]
 serialization = ["serde"]

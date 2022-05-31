@@ -13,13 +13,15 @@
 // limitations under the License.
 
 use std::collections::HashMap;
+use std::fmt::Debug;
+use std::sync::Arc;
 use std::time::Duration;
 
 use crate::commands::admin_command::AdminCommand;
 use crate::errors::Result;
 
 /// `ClientPolicy` encapsulates parameters for client policy command.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct ClientPolicy {
     /// User authentication to cluster. Leave empty for clusters running without restricted access.
     pub user_password: Option<(String, String)>,
@@ -83,6 +85,28 @@ pub struct ClientPolicy {
     /// to join the client's view of the cluster. Should only be set when connecting to servers
     /// that support the "cluster-name" info command.
     pub cluster_name: Option<String>,
+
+    /// Specifies TLS secure connection policy for TLS enabled servers.
+    pub tls_config: Option<Arc<rustls::ClientConfig>>,
+}
+
+impl Debug for ClientPolicy {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ClientPolicy")
+            .field("user_password", &self.user_password)
+            .field("timeout", &self.timeout)
+            .field("idle_timeout", &self.idle_timeout)
+            .field("max_conns_per_node", &self.max_conns_per_node)
+            .field("conn_pools_per_node", &self.conn_pools_per_node)
+            .field("fail_if_not_connected", &self.fail_if_not_connected)
+            .field("buffer_reclaim_threshold", &self.buffer_reclaim_threshold)
+            .field("tend_interval", &self.tend_interval)
+            .field("ip_map", &self.ip_map)
+            .field("use_services_alternate", &self.use_services_alternate)
+            .field("thread_pool_size", &self.thread_pool_size)
+            .field("cluster_name", &self.cluster_name)
+            .finish()
+    }
 }
 
 impl Default for ClientPolicy {
@@ -100,6 +124,7 @@ impl Default for ClientPolicy {
             thread_pool_size: 128,
             cluster_name: None,
             buffer_reclaim_threshold: 65536,
+            tls_config: None,
         }
     }
 }
@@ -110,5 +135,26 @@ impl ClientPolicy {
         let password = AdminCommand::hash_password(&password)?;
         self.user_password = Some((username, password));
         Ok(())
+    }
+
+    /// Set sane default for tls configuration
+    pub fn set_default_tls(&mut self) {
+        let mut root_cert_store = rustls::RootCertStore::empty();
+        root_cert_store.add_server_trust_anchors(webpki_roots::TLS_SERVER_ROOTS.0.iter().map(
+            |ta| {
+                rustls::OwnedTrustAnchor::from_subject_spki_name_constraints(
+                    ta.subject,
+                    ta.spki,
+                    ta.name_constraints,
+                )
+            },
+        ));
+        let config = Arc::new(
+            rustls::ClientConfig::builder()
+                .with_safe_defaults()
+                .with_root_certificates(root_cert_store)
+                .with_no_client_auth(),
+        );
+        self.tls_config = Some(config);
     }
 }

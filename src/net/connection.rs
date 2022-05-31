@@ -13,7 +13,10 @@
 // License for the specific language governing permissions and limitations under
 // the License.
 
+use rustls::{ClientConnection, StreamOwned};
+use std::convert::TryInto;
 use std::io::prelude::*;
+use std::io::Write;
 use std::net::{Shutdown, TcpStream, ToSocketAddrs};
 use std::ops::Add;
 use std::time::{Duration, Instant};
@@ -32,16 +35,33 @@ pub struct Connection {
     idle_deadline: Option<Instant>,
 
     // connection object
-    conn: TcpStream,
+    conn: Stream,
 
     bytes_read: usize,
 
     pub buffer: Buffer,
 }
 
+#[derive(Debug)]
+enum Stream {
+    TLS(StreamOwned<ClientConnection, TcpStream>),
+    Plain(TcpStream),
+}
+
 impl Connection {
-    pub fn new<T: ToSocketAddrs>(addr: T, policy: &ClientPolicy) -> Result<Self> {
-        let stream = TcpStream::connect(addr)?;
+    pub fn new<T: ToSocketAddrs + Copy>(addr: T, policy: &ClientPolicy) -> Result<Self> {
+        let tcp_stream = TcpStream::connect(addr)?;
+        let stream = match &policy.tls_config {
+            Some(config) => {
+                let server_name = "aerospike.preprod.crto.in".try_into().unwrap();
+                let conn = ClientConnection::new(config.clone(), server_name);
+                let sock = TcpStream::connect(addr)?;
+                let tls = StreamOwned::new(conn.unwrap(), sock);
+                Stream::TLS(tls)
+            }
+            None => Stream::Plain(tcp_stream),
+        };
+
         let mut conn = Connection {
             buffer: Buffer::new(policy.buffer_reclaim_threshold),
             bytes_read: 0,
@@ -59,18 +79,32 @@ impl Connection {
     }
 
     pub fn close(&mut self) {
-        let _ = self.conn.shutdown(Shutdown::Both);
+        match &self.conn {
+            Stream::TLS(s) => {
+                let _ = s.sock.shutdown(Shutdown::Both);
+            }
+            Stream::Plain(s) => {
+                let _ = s.shutdown(Shutdown::Both);
+            }
+        };
     }
 
     pub fn flush(&mut self) -> Result<()> {
-        self.conn.write_all(&self.buffer.data_buffer)?;
+        match &mut self.conn {
+            Stream::TLS(s) => s.write_all(&self.buffer.data_buffer)?,
+            Stream::Plain(s) => s.write_all(&self.buffer.data_buffer)?,
+        };
+
         self.refresh();
         Ok(())
     }
 
     pub fn read_buffer(&mut self, size: usize) -> Result<()> {
         self.buffer.resize_buffer(size)?;
-        self.conn.read_exact(&mut self.buffer.data_buffer)?;
+        match &mut self.conn {
+            Stream::TLS(s) => s.read_exact(&mut self.buffer.data_buffer)?,
+            Stream::Plain(s) => s.read_exact(&mut self.buffer.data_buffer)?,
+        };
         self.bytes_read += size;
         self.buffer.reset_offset()?;
         self.refresh();
@@ -78,21 +112,36 @@ impl Connection {
     }
 
     pub fn write(&mut self, buf: &[u8]) -> Result<()> {
-        self.conn.write_all(buf)?;
+        match &mut self.conn {
+            Stream::TLS(s) => s.write_all(buf)?,
+            Stream::Plain(s) => s.write_all(buf)?,
+        };
         self.refresh();
         Ok(())
     }
 
     pub fn read(&mut self, buf: &mut [u8]) -> Result<()> {
-        self.conn.read_exact(buf)?;
+        match &mut self.conn {
+            Stream::TLS(s) => s.read_exact(buf)?,
+            Stream::Plain(s) => s.read_exact(buf)?,
+        };
         self.bytes_read += buf.len();
         self.refresh();
         Ok(())
     }
 
     pub fn set_timeout(&self, timeout: Option<Duration>) -> Result<()> {
-        self.conn.set_read_timeout(timeout)?;
-        self.conn.set_write_timeout(timeout)?;
+        match &self.conn {
+            Stream::TLS(s) => {
+                s.sock.set_read_timeout(timeout)?;
+                s.sock.set_write_timeout(timeout)?;
+            }
+            Stream::Plain(s) => {
+                s.set_read_timeout(timeout)?;
+                s.set_write_timeout(timeout)?;
+            }
+        };
+
         Ok(())
     }
 

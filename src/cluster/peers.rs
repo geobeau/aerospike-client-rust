@@ -71,9 +71,11 @@ fn parse_peer(info_peers: &str, lex: &mut Lexer<Token>, default_port: u16) -> Re
         _ => bail!(ErrorKind::BadResponse(parse_error(&lex, info_peers))),
     };
 
+    let mut tls_hostname = None;
+
     let mut token = lex.next();
     if Some(Token::Text) == token {
-        let _tls_hostname = lex.slice();
+        tls_hostname = Some(lex.slice().to_string());
         token = lex.next();
     }
 
@@ -86,7 +88,7 @@ fn parse_peer(info_peers: &str, lex: &mut Lexer<Token>, default_port: u16) -> Re
         Some(Token::Text) => lex.slice(),
         _ => bail!(ErrorKind::BadResponse(parse_error(&lex, info_peers))),
     }
-    .to_hosts_with_default_port(default_port)?;
+    .to_hosts_with_defaults(default_port, tls_hostname)?;
 
     lex.next(); // Close brackets
     Ok(hosts)
@@ -105,19 +107,22 @@ mod tests {
         let empty = "6,3000,[]";
         assert!(parse_peers_info(fail).is_err());
         let work = parse_peers_info(work).unwrap();
-        println!("{:?}", work);
+        println!("{:#?}", work);
         assert!(
             work == vec![
                 Host {
                     name: "1.2.3.4".to_string(),
+                    tls_name: Some("aerospike.com".to_string()),
                     port: 4333
                 },
                 Host {
                     name: "10.11.12.13".to_string(),
+                    tls_name: None,
                     port: 3000
                 },
                 Host {
                     name: "localhost".to_string(),
+                    tls_name: None,
                     port: 3000
                 }
             ]
