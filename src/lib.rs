@@ -160,7 +160,7 @@ pub use key::Key;
 pub use net::Host;
 pub use operations::{MapPolicy, MapReturnType, MapWriteMode};
 pub use policy::{
-    BatchPolicy, ClientPolicy, CommitLevel, Concurrency, ConsistencyLevel, Expiration,
+    BatchPolicy, ClientPolicy, CommitLevel, Concurrency, ConsistencyLevel, Expiration, AuthMode,
     GenerationPolicy, Policy, Priority, QueryPolicy, ReadPolicy, RecordExistsAction, ScanPolicy,
     WritePolicy,
 };

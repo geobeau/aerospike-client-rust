@@ -17,7 +17,6 @@ use std::fmt::Debug;
 use std::sync::Arc;
 use std::time::Duration;
 
-use crate::commands::admin_command::AdminCommand;
 use crate::errors::Result;
 
 /// `ClientPolicy` encapsulates parameters for client policy command.
@@ -86,6 +85,9 @@ pub struct ClientPolicy {
     /// that support the "cluster-name" info command.
     pub cluster_name: Option<String>,
 
+    /// Determines authentication mode when user/password is defined.
+    pub auth_mode: AuthMode,
+
     /// Specifies TLS secure connection policy for TLS enabled servers.
     pub tls_config: Option<Arc<rustls::ClientConfig>>,
 }
@@ -109,6 +111,17 @@ impl Debug for ClientPolicy {
     }
 }
 
+/// Specifies TLS secure connection policy for TLS enabled servers.
+#[derive(Debug, Clone)]
+pub enum AuthMode {
+    /// External uses external authentication (like LDAP).  Specific external authentication is
+	/// configured on server.
+    External,
+    /// Internal uses internal authentication only.  Hashed password is stored on the server.
+	/// Do not send clear password. This is the default.
+    Internal
+}
+
 impl Default for ClientPolicy {
     fn default() -> ClientPolicy {
         ClientPolicy {
@@ -125,6 +138,7 @@ impl Default for ClientPolicy {
             cluster_name: None,
             buffer_reclaim_threshold: 65536,
             tls_config: None,
+            auth_mode: AuthMode::Internal,
         }
     }
 }
@@ -132,7 +146,6 @@ impl Default for ClientPolicy {
 impl ClientPolicy {
     /// Set username and password to use when authenticating to the cluster.
     pub fn set_user_password(&mut self, username: String, password: String) -> Result<()> {
-        let password = AdminCommand::hash_password(&password)?;
         self.user_password = Some((username, password));
         Ok(())
     }

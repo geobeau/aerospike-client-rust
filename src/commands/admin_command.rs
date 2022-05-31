@@ -22,8 +22,8 @@ use crate::cluster::Cluster;
 use crate::errors::{ErrorKind, Result};
 use crate::net::Connection;
 use crate::net::PooledConnection;
-use crate::policy::AdminPolicy;
-use crate::ResultCode;
+use crate::policy::{AdminPolicy, AuthMode};
+use crate::{ResultCode, ClientPolicy};
 
 // Commands
 const AUTHENTICATE: u8 = 0;
@@ -42,6 +42,7 @@ const USER: u8 = 0;
 const PASSWORD: u8 = 1;
 const OLD_PASSWORD: u8 = 2;
 const CREDENTIAL: u8 = 3;
+const CLEAR_PASSWORD: u8 = 4;
 const ROLES: u8 = 10;
 
 // Misc
@@ -88,16 +89,32 @@ impl AdminCommand {
         Ok(())
     }
 
-    pub fn authenticate(conn: &mut Connection, user: &str, password: &str) -> Result<()> {
+    pub fn authenticate(conn: &mut Connection, policy: &ClientPolicy, user: &str, password: &str) -> Result<()> {
         conn.buffer.resize_buffer(1024)?;
         conn.buffer.reset_offset()?;
-        AdminCommand::write_header(conn, LOGIN, 2)?;
-        AdminCommand::write_field_str(conn, USER, user)?;
-        AdminCommand::write_field_bytes(conn, CREDENTIAL, password.as_bytes())?;
-        conn.buffer.size_buffer()?;
-        let size = conn.buffer.data_offset;
-        conn.buffer.reset_offset()?;
-        AdminCommand::write_size(conn, size as i64)?;
+        let hashed_password = AdminCommand::hash_password(&password)?;
+        match policy.auth_mode {
+            AuthMode::External => {
+                AdminCommand::write_header(conn, LOGIN, 3)?;
+                AdminCommand::write_field_str(conn, USER, user)?;
+                AdminCommand::write_field_bytes(conn, CREDENTIAL, hashed_password.as_bytes())?;
+                AdminCommand::write_field_str(conn, CLEAR_PASSWORD, password)?;
+                conn.buffer.size_buffer()?;
+                let size = conn.buffer.data_offset;
+                conn.buffer.reset_offset()?;
+                AdminCommand::write_size(conn, size as i64)?;
+            },
+            AuthMode::Internal => {
+                AdminCommand::write_header(conn, LOGIN, 2)?;
+                AdminCommand::write_field_str(conn, USER, user)?;
+                AdminCommand::write_field_bytes(conn, CREDENTIAL, hashed_password.as_bytes())?;
+                conn.buffer.size_buffer()?;
+                let size = conn.buffer.data_offset;
+                conn.buffer.reset_offset()?;
+                AdminCommand::write_size(conn, size as i64)?;
+            }
+        };
+
 
         conn.flush()?;
         conn.read_buffer(HEADER_SIZE)?;

@@ -73,7 +73,7 @@ impl Connection {
                 Some(timeout) => Some(Instant::now() + timeout),
             },
         };
-        conn.authenticate(&policy.user_password)?;
+        conn.authenticate(policy, &policy.user_password)?;
         conn.refresh();
         Ok(conn)
     }
@@ -157,9 +157,9 @@ impl Connection {
         };
     }
 
-    fn authenticate(&mut self, user_password: &Option<(String, String)>) -> Result<()> {
+    fn authenticate(&mut self, policy: &ClientPolicy, user_password: &Option<(String, String)>) -> Result<()> {
         if let Some((ref user, ref password)) = *user_password {
-            match AdminCommand::authenticate(self, user, password) {
+            match AdminCommand::authenticate(self, policy,  user, password) {
                 Ok(()) => {
                     return Ok(());
                 }
